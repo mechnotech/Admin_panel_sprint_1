@@ -1,0 +1,20 @@
+version: '3.2'
+
+volumes:
+  postgres_data:
+
+networks:
+  database_network:
+    driver: bridge
+
+services:
+  db:
+    image: postgres:13.0
+    container_name: postgres
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .env
+    networks:
+      - database_network
