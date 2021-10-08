@@ -1,10 +1,15 @@
-DROP TABLE content.film_work;
-DROP TABLE content.genre;
-DROP TABLE content.person;
-DROP TABLE content.genre_film_work;
-DROP TABLE content.person_film_work;
-DROP EXTENSION citext;
-DROP SCHEMA content;
+-- DROP TABLE content.film_work;
+-- DROP TABLE content.genre;
+-- DROP TABLE content.person;
+-- DROP TABLE content.genre_film_work;
+-- DROP TABLE content.person_film_work;
+-- DROP EXTENSION citext;
+-- DROP SCHEMA content;
+truncate content.film_work;
+truncate content.genre;
+truncate content.person;
+truncate content.genre_film_work;
+truncate content.person_film_work;
 
 CREATE SCHEMA IF NOT EXISTS content;
 SET search_path TO content,public;
@@ -43,15 +48,15 @@ CREATE TABLE IF NOT EXISTS content.person (
 
 CREATE TABLE IF NOT EXISTS content.genre_film_work (
     id uuid PRIMARY KEY default gen_random_uuid(),
-    film_work_id TEXT NOT NULL,
-    genre_id TEXT NOT NULL,
+    film_work_id uuid NOT NULL,
+    genre_id uuid NOT NULL,
     created_at timestamptz default now()
 );
 
 CREATE TABLE IF NOT EXISTS content.person_film_work (
     id uuid PRIMARY KEY default gen_random_uuid(),
-    film_work_id TEXT NOT NULL,
-    person_id TEXT NOT NULL,
+    film_work_id uuid NOT NULL,
+    person_id uuid NOT NULL,
     role citext NOT NULL CHECK (textlen(role) between 3 and 30),
     created_at timestamptz default now()
 );

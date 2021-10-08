@@ -1,97 +1,91 @@
 import os
 import sqlite3
-from typing import Optional
 
 import psycopg2
-from psycopg2._psycopg import AsIs
+from dotenv import load_dotenv
 from psycopg2.extensions import connection as _connection
 from psycopg2.extras import DictCursor
-from dotenv import load_dotenv
+from data_classes import Movie, Person, Genre, GenreFilmWork, PersonFilmWork
 
 load_dotenv()
 
-from dataclasses import dataclass, asdict
+
+class SQLiteLoader:
+    def __init__(self, connection, verbose=False):
+        self.connection = connection
+        self.data_container = []
+        self.cursor = self.connection.cursor()
+        self.verbose = verbose
+
+    def load_table(self, table_name: str):
+        data_class = TABLES_TO_CLASSES[table_name]
+        self.data_container.clear()
+        self.cursor.execute(f'SELECT * FROM {table_name}')
+
+        while True:
+            block_rows = self.cursor.fetchmany(size=BLOCK_SIZE)
+            if not block_rows:
+                break
+            block = []
+            for row in block_rows:
+                data = data_class(*row)
+                block.append(data)
+            self.data_container.append(block)
+
+        if self.verbose:
+            print(f'Загружено: из {table_name} {len(self.data_container)} блоков')
+
+        return {'table_name': table_name, 'data': self.data_container}
 
 
-@dataclass
-class Movie:
+class PostgresSaver(SQLiteLoader):
 
-    __slots__ = (
-        'id',
-        'title',
-        'description',
-        'creation_date',
-        'certificate',
-        'file_path',
-        'rating',
-        'type',
-        'created_at',
-        'updated_at',
-    )
-    id: str
-    title: str
-    description: str
-    creation_date: Optional[str]
-    certificate: str
-    file_path: str
-    rating: float
-    type: str
-    created_at: str
-    updated_at: str
+    def load_table(self, table_name):
+        raise NotImplementedError("function load_table not implemented")
 
-    @property
-    def get_keys(self):
-        return ', '.join(self._get_cleaned_data.keys())
+    def save_all_data(self, data: dict):
+        table_name = data['table_name']
+        data = data['data']
+        block_args = []
+        block_values = []
 
-    @property
-    def get_values(self):
-        return list(map(lambda x: x, self._get_cleaned_data.values()))
+        for block in data:
+            block_args.clear()
+            block_values.clear()
+            for obj in block:
+                fields = obj.get_fields
+                values = obj.get_values
+                row_args = '(' + ', '.join(["%s"] * obj.get_len) + ')'
+                block_args.append(row_args)
+                block_values += values
+            args = ', '.join(block_args)
+            query = f'INSERT INTO {table_name} ({fields}) VALUES {args} ON CONFLICT (id) DO NOTHING;'
+            self.cursor.execute(query, block_values)
 
-    @property
-    def get_len(self):
-        return len(self._get_cleaned_data)
-
-    @property
-    def _get_cleaned_data(self):
-        clean_data = {}
-        for k, v in asdict(self).items():
-            if not v:
-                continue
-            clean_data[k] = v
-        return clean_data
+        if self.verbose:
+            print(f'В таблицу {table_name} вставлено: {len(data)} блоков')
 
 
 def load_from_sqlite(sql_conn: sqlite3.Connection, pg_conn: _connection):
     """Основной метод загрузки данных из SQLite в Postgres"""
-    sql3_cursor = sqlite_conn.cursor()
-    pg_cursor = pg_conn.cursor()
-    # c.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    # sql_tables = map(lambda item: item[0], c.fetchall())
-    sql3_cursor.execute("SELECT * FROM film_work")
 
-    while True:
-        row = sql3_cursor.fetchone()
-        if not row:
-            break
-        movie = Movie(*row)
-        fields = movie.get_keys
-        values = movie.get_values
-        args = ', '.join(["%s"]*movie.get_len)
-        #vl = pg_cursor.mogrify(args, values)
-        # fields = 'id, title, description, rating, type, created_at, updated_at'
-        # values =
-        pg_cursor.execute(f"INSERT INTO film_work ({fields}) VALUES ({args}) ON CONFLICT (id) DO NOTHING;", values)
-        #result = pg_cursor.fetchone()
-        #print(result)
-
-    # postgres_saver = PostgresSaver(pg_conn)
-    # sqlite_loader = SQLiteLoader(connection)
-
-    # data = sqlite_loader.load_movies()
-    # postgres_saver.save_all_data(data)
+    sqlite_loader = SQLiteLoader(sql_conn, verbose=True)
+    postgres_saver = PostgresSaver(pg_conn, verbose=True)
+    for key in TABLES_TO_CLASSES.keys():
+        data = sqlite_loader.load_table(key)
+        postgres_saver.save_all_data(data)
 
 
 if __name__ == '__main__':
+    BLOCK_SIZE = 10
+    TABLES_TO_CLASSES = {
+        'film_work': Movie,
+        'genre': Genre,
+        'person': Person,
+        'genre_film_work': GenreFilmWork,
+        'person_film_work': PersonFilmWork
+
+    }
     dsl = {
         'dbname': os.getenv('DB_NAME'),
         'user': os.getenv('POSTGRES_USER'),
@@ -100,8 +94,5 @@ if __name__ == '__main__':
         'port': int(os.getenv('DB_PORT')),
         'options': '-c search_path=content'
     }
-    with sqlite3.connect('db.sqlite') as sqlite_conn, psycopg2.connect(
-            **dsl,
-            cursor_factory=DictCursor
-    ) as pg_conn:
+    with sqlite3.connect('db.sqlite') as sqlite_conn, psycopg2.connect(**dsl, cursor_factory=DictCursor) as pg_conn:
         load_from_sqlite(sqlite_conn, pg_conn)
