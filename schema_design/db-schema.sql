@@ -1,16 +1,3 @@
--- DROP TABLE content.film_work;
--- DROP TABLE content.genre;
--- DROP TABLE content.person;
--- DROP TABLE content.genre_film_work;
--- DROP TABLE content.person_film_work;
--- DROP EXTENSION citext;
--- DROP SCHEMA content;
-truncate content.film_work;
-truncate content.genre;
-truncate content.person;
-truncate content.genre_film_work;
-truncate content.person_film_work;
-
 CREATE SCHEMA IF NOT EXISTS content;
 SET search_path TO content,public;
 CREATE EXTENSION citext;
@@ -20,7 +7,7 @@ CREATE TABLE IF NOT EXISTS content.film_work (
     id uuid PRIMARY KEY default gen_random_uuid(),
     title citext NOT NULL CHECK (textlen(title) BETWEEN 3 and 250),
     description VARCHAR(10000),
-    creation_date DATE, --CHECK (creation_date BETWEEN '1900-01-01' and now()),
+    creation_date DATE CHECK (creation_date BETWEEN '1900-01-01' and now()),
     certificate VARCHAR(1000),
     file_path VARCHAR(4096),
     rating FLOAT CHECK (rating BETWEEN 0.0 and 9.9),
@@ -67,7 +54,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS film_work_person_role ON person_film_work (fil
 
 CREATE FUNCTION content.upd_stamp() RETURNS trigger AS $upd_stamp$
     BEGIN
-        NEW.updated_at := current_timestamp;
+        NEW.updated_at := now();
         RETURN NEW;
     END;
 $upd_stamp$ LANGUAGE plpgsql;

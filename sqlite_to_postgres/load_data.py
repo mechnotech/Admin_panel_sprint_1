@@ -72,8 +72,16 @@ def load_from_sqlite(sql_conn: sqlite3.Connection, pg_conn: _connection):
     sqlite_loader = SQLiteLoader(sql_conn, verbose=True)
     postgres_saver = PostgresSaver(pg_conn, verbose=True)
     for key in TABLES_TO_CLASSES.keys():
-        data = sqlite_loader.load_table(key)
-        postgres_saver.save_all_data(data)
+        try:
+            data = sqlite_loader.load_table(key)
+        except Exception as e:
+            print(f'При чтении из SQLite произошла ошибка {e}')
+            break
+        try:
+            postgres_saver.save_all_data(data)
+        except Exception as e:
+            print(f'При записи в Postgres произошла ошибка {e}')
+            break
 
 
 if __name__ == '__main__':
