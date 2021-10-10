@@ -1,3 +1,15 @@
+#### Запуск локльной базы postgres
+1) Создать .env файл по примеру env.example
+2) Выполнить команду:
+
+````
+docker-compose -f local-postgres.yaml up -d
+````
+  
+
+
+
+
 # Greetings traveller
 
 Мы рады, что вы приступили к выполнению 1 задания из курса Middle Python-разработчик.
