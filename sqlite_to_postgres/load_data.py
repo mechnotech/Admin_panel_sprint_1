@@ -48,16 +48,18 @@ class PostgresSaver(SQLiteLoader):
         data = data['data']
         block_args = []
         block_values = []
+        fields = data[0][0].get_fields
 
         for block in data:
             block_args.clear()
             block_values.clear()
+
             for obj in block:
-                fields = obj.get_fields
                 values = obj.get_values
                 row_args = '(' + ', '.join(["%s"] * obj.get_len) + ')'
                 block_args.append(row_args)
                 block_values += values
+
             args = ', '.join(block_args)
             query = f'INSERT INTO {table_name} ({fields}) VALUES {args} ON CONFLICT (id) DO NOTHING;'
             self.cursor.execute(query, block_values)
@@ -66,11 +68,11 @@ class PostgresSaver(SQLiteLoader):
             print(f'В таблицу {table_name} вставлено: {len(data)} блоков')
 
 
-def load_from_sqlite(sql_conn: sqlite3.Connection, pg_conn: _connection):
+def load_from_sqlite(sql_conn: sqlite3.Connection, psg_conn: _connection):
     """Основной метод загрузки данных из SQLite в Postgres"""
 
     sqlite_loader = SQLiteLoader(sql_conn, verbose=True)
-    postgres_saver = PostgresSaver(pg_conn, verbose=True)
+    postgres_saver = PostgresSaver(psg_conn, verbose=True)
     for key in TABLES_TO_CLASSES.keys():
         try:
             data = sqlite_loader.load_table(key)
