@@ -3,9 +3,6 @@ from dataclasses import dataclass, asdict
 
 @dataclass
 class CommonTable:
-    @property
-    def get_fields(self):
-        return ', '.join(asdict(self).keys())
 
     @property
     def get_values(self):

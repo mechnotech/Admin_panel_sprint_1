@@ -1,101 +1,96 @@
+import logging
 import os
 import sqlite3
 
 import psycopg2
 from dotenv import load_dotenv
 from psycopg2.extensions import connection as _connection
-from psycopg2.extras import DictCursor
+from psycopg2.extras import DictCursor, execute_values
+
 from data_classes import Movie, Person, Genre, GenreFilmWork, PersonFilmWork
 
 load_dotenv()
 
+log = logging.getLogger(__name__)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
+
+BLOCK_SIZE = 100
+TABLES_TO_CLASSES = {
+    'film_work': Movie,
+    'genre': Genre,
+    'person': Person,
+    'genre_film_work': GenreFilmWork,
+    'person_film_work': PersonFilmWork,
+}
+
 
 class SQLiteLoader:
-    def __init__(self, connection, verbose=False):
+    def __init__(self, connection, table_name, data_class, verbose=False):
         self.connection = connection
-        self.data_container = []
         self.cursor = self.connection.cursor()
         self.verbose = verbose
+        self.table_name = table_name
+        self.data_class = data_class
+        self.cursor.execute(f'SELECT * FROM {self.table_name}')
 
-    def load_table(self, table_name: str):
-        data_class = TABLES_TO_CLASSES[table_name]
-        self.data_container.clear()
-        self.cursor.execute(f'SELECT * FROM {table_name}')
+    def load_table(self):
 
+        counter = 0
         while True:
             block_rows = self.cursor.fetchmany(size=BLOCK_SIZE)
             if not block_rows:
                 break
             block = []
             for row in block_rows:
-                data = data_class(*row)
+                data = self.data_class(*row)
                 block.append(data)
-            self.data_container.append(block)
+            yield block
+            counter += 1
 
         if self.verbose:
-            print(f'Загружено: из {table_name} {len(self.data_container)} блоков')
-
-        return {'table_name': table_name, 'data': self.data_container}
+            log.info('Загружено: из %s %s блоков', self.table_name, counter)
 
 
 class PostgresSaver(SQLiteLoader):
 
-    def load_table(self, table_name):
-        raise NotImplementedError("function load_table not implemented")
-
-    def save_all_data(self, data: dict):
-        table_name = data['table_name']
-        data = data['data']
-        block_args = []
+    def save_all_data(self, data):
         block_values = []
-        fields = data[0][0].get_fields
-
+        counter = 0
+        
         for block in data:
-            block_args.clear()
             block_values.clear()
 
             for obj in block:
-                values = obj.get_values
-                row_args = '(' + ', '.join(["%s"] * obj.get_len) + ')'
-                block_args.append(row_args)
-                block_values += values
-
-            args = ', '.join(block_args)
-            query = f'INSERT INTO {table_name} ({fields}) VALUES {args} ON CONFLICT (id) DO NOTHING;'
-            self.cursor.execute(query, block_values)
+                values = tuple(obj.get_values)
+                block_values.append(values)
+            query = f'INSERT INTO {self.table_name} VALUES %s ON CONFLICT (id) DO NOTHING;'
+            execute_values(self.cursor, query, block_values)
+            counter += 1
 
         if self.verbose:
-            print(f'В таблицу {table_name} вставлено: {len(data)} блоков')
+            log.info('В таблицу %s вставлено: %s блоков', self.table_name, counter)
 
 
 def load_from_sqlite(sql_conn: sqlite3.Connection, psg_conn: _connection):
     """Основной метод загрузки данных из SQLite в Postgres"""
 
-    sqlite_loader = SQLiteLoader(sql_conn, verbose=True)
-    postgres_saver = PostgresSaver(psg_conn, verbose=True)
-    for key in TABLES_TO_CLASSES.keys():
+    for key, value in TABLES_TO_CLASSES.items():
         try:
-            data = sqlite_loader.load_table(key)
+            sqlite_loader = SQLiteLoader(sql_conn, table_name=key, data_class=value, verbose=True)
+            data = sqlite_loader.load_table()
         except Exception as e:
-            print(f'При чтении из SQLite произошла ошибка {e}')
+            log.critical(f'При чтении из SQLite произошла ошибка {e}')
             break
         try:
+            postgres_saver = PostgresSaver(psg_conn, table_name=key, data_class=value, verbose=True)
             postgres_saver.save_all_data(data)
         except Exception as e:
-            print(f'При записи в Postgres произошла ошибка {e}')
+            log.critical(f'При записи в Postgres произошла ошибка {e}')
             break
 
 
 if __name__ == '__main__':
-    BLOCK_SIZE = 10
-    TABLES_TO_CLASSES = {
-        'film_work': Movie,
-        'genre': Genre,
-        'person': Person,
-        'genre_film_work': GenreFilmWork,
-        'person_film_work': PersonFilmWork
-
-    }
     dsl = {
         'dbname': os.getenv('DB_NAME'),
         'user': os.getenv('POSTGRES_USER'),
@@ -106,3 +101,6 @@ if __name__ == '__main__':
     }
     with sqlite3.connect('db.sqlite') as sqlite_conn, psycopg2.connect(**dsl, cursor_factory=DictCursor) as pg_conn:
         load_from_sqlite(sqlite_conn, pg_conn)
+
+    sqlite_conn.close()
+    pg_conn.close()

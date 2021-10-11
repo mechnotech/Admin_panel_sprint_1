@@ -1,6 +1,6 @@
 import uuid
 
-from django.core.validators import MinValueValidator, MinLengthValidator
+from django.core.validators import MinValueValidator, MinLengthValidator, MaxValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -40,11 +40,15 @@ class Genre(TimeAndIDMixin, models.Model):
 
 
 class FilmworkGenre(models.Model):
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4)
     filmwork = models.ForeignKey('Filmwork', on_delete=models.CASCADE, to_field='id', db_column='film_work_id')
     genre = models.ForeignKey('Genre', on_delete=models.CASCADE, to_field='id', db_column='genre_id')
     created_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        indexes = [
+            models.Index(fields=['filmwork_id', 'genre_id'], name='film_work_genre'),
+        ]
         verbose_name = _('Жанр фильма')
         verbose_name_plural = _('Жанры фильмов')
         db_table = '"content"."genre_film_work"'
@@ -69,6 +73,7 @@ class Person(TimeAndIDMixin, models.Model):
 
 
 class PersonRole(models.Model):
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4)
     filmwork = models.ForeignKey(
         'Filmwork', on_delete=models.CASCADE, to_field='id', db_column='film_work_id'
     )
@@ -77,7 +82,6 @@ class PersonRole(models.Model):
     )
     role = models.CharField(
         _('role'),
-        validators=[MinLengthValidator(3)],
         max_length=30,
         choices=RoleType.choices
     )
@@ -87,6 +91,9 @@ class PersonRole(models.Model):
         verbose_name = _('Персона её роль')
         verbose_name_plural = _('Персоны и их роли')
         db_table = '"content"."person_film_work"'
+        indexes = [
+            models.Index(fields=['filmwork_id', 'person_id', 'role'], name='film_work_person_role'),
+        ]
         managed = False
 
     def __str__(self):
@@ -99,7 +106,11 @@ class Filmwork(TimeAndIDMixin, models.Model):
     creation_date = models.DateField(_('Дата выхода'), null=True, blank=True)
     certificate = models.TextField(_('certificate'), null=True, blank=True)
     file_path = models.FileField(_('Путь к файлу'), upload_to='film_works/', blank=True)
-    rating = models.FloatField(_('Рейтинг'), validators=[MinValueValidator(0)], default=0.0)
+    rating = models.FloatField(
+        _('Рейтинг'),
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        default=0.0
+    )
     type = models.CharField(_('Тип произведения'), max_length=20, choices=FilmworkType.choices)
     genres = models.ManyToManyField(Genre, through='FilmworkGenre')
 
