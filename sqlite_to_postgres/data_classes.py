@@ -6,11 +6,7 @@ class CommonTable:
 
     @property
     def get_values(self):
-        return asdict(self).values()
-
-    @property
-    def get_len(self):
-        return len(asdict(self))
+        return '\t'.join([str(x) for x in asdict(self).values()])
 
 
 @dataclass

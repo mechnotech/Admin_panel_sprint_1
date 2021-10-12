@@ -6,7 +6,7 @@ DATABASES = {
         'NAME': os.environ.get('DB_NAME'),
         'USER': os.environ.get('POSTGRES_USER'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
-        'HOST': '172.16.238.10',
+        'HOST': os.getenv('DB_DEV_HOST'),
         'PORT': 5432,
         'OPTIONS': {
            'options': '-c search_path=public,content'

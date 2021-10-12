@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 import sqlite3
@@ -5,7 +6,7 @@ import sqlite3
 import psycopg2
 from dotenv import load_dotenv
 from psycopg2.extensions import connection as _connection
-from psycopg2.extras import DictCursor, execute_values
+from psycopg2.extras import DictCursor
 
 from data_classes import Movie, Person, Genre, GenreFilmWork, PersonFilmWork
 
@@ -51,21 +52,19 @@ class SQLiteLoader:
         if self.verbose:
             log.info('Загружено: из %s %s блоков', self.table_name, counter)
 
+    def __del__(self):
+        self.cursor.close()
+
 
 class PostgresSaver(SQLiteLoader):
 
     def save_all_data(self, data):
-        block_values = []
         counter = 0
-        
-        for block in data:
-            block_values.clear()
 
-            for obj in block:
-                values = tuple(obj.get_values)
-                block_values.append(values)
-            query = f'INSERT INTO {self.table_name} VALUES %s ON CONFLICT (id) DO NOTHING;'
-            execute_values(self.cursor, query, block_values)
+        for block in data:
+            block_values = '\n'.join([obj.get_values for obj in block])
+            with io.StringIO(block_values) as f:
+                self.cursor.copy_from(f, table=self.table_name, null='None', size=BLOCK_SIZE)
             counter += 1
 
         if self.verbose:
@@ -75,18 +74,18 @@ class PostgresSaver(SQLiteLoader):
 def load_from_sqlite(sql_conn: sqlite3.Connection, psg_conn: _connection):
     """Основной метод загрузки данных из SQLite в Postgres"""
 
-    for key, value in TABLES_TO_CLASSES.items():
+    for table_name, data_class in TABLES_TO_CLASSES.items():
         try:
-            sqlite_loader = SQLiteLoader(sql_conn, table_name=key, data_class=value, verbose=True)
+            sqlite_loader = SQLiteLoader(sql_conn, table_name, data_class, verbose=True)
             data = sqlite_loader.load_table()
-        except Exception as e:
-            log.critical(f'При чтении из SQLite произошла ошибка {e}')
+        except Exception:
+            log.exception('При чтении из SQLite произошла ошибка')
             break
         try:
-            postgres_saver = PostgresSaver(psg_conn, table_name=key, data_class=value, verbose=True)
+            postgres_saver = PostgresSaver(psg_conn, table_name, data_class, verbose=True)
             postgres_saver.save_all_data(data)
-        except Exception as e:
-            log.critical(f'При записи в Postgres произошла ошибка {e}')
+        except Exception:
+            log.exception('При записи в Postgres произошла ошибка')
             break
 
 
@@ -95,7 +94,7 @@ if __name__ == '__main__':
         'dbname': os.getenv('DB_NAME'),
         'user': os.getenv('POSTGRES_USER'),
         'password': os.getenv('POSTGRES_PASSWORD'),
-        'host': '172.16.238.10',
+        'host': os.getenv('DB_DEV_HOST'),
         'port': int(os.getenv('DB_PORT')),
         'options': '-c search_path=content'
     }
