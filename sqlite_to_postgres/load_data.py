@@ -79,13 +79,13 @@ def load_from_sqlite(sql_conn: sqlite3.Connection, psg_conn: _connection):
             sqlite_loader = SQLiteLoader(sql_conn, table_name, data_class, verbose=True)
             data = sqlite_loader.load_table()
         except Exception:
-            log.exception('При чтении из SQLite произошла ошибка')
+            log.exception('An error occured while reading from SQLite')
             break
         try:
             postgres_saver = PostgresSaver(psg_conn, table_name, data_class, verbose=True)
             postgres_saver.save_all_data(data)
         except Exception:
-            log.exception('При записи в Postgres произошла ошибка')
+            log.exception('An error occurred while writing to Postgres')
             break
 
 
