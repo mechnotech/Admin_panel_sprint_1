@@ -1,65 +1,86 @@
+from django import forms
 from django.contrib import admin
-from .models import Filmwork, FilmworkGenre, Person, PersonRole, Genre
+from django.contrib.admin.widgets import FilteredSelectMultiple
 
-ROWS_PER_PAGE = 20
+from .models import (
+    Filmwork,
+    Genre,
+    Person,
+)
 
 
-class GenreInline(admin.TabularInline):
-    model = FilmworkGenre
-    extra = 0
-    verbose_name = 'Жанр'
+class FilmworkGenreInline(admin.TabularInline):
+    model = Genre.filmwork_set.through
     autocomplete_fields = ('genre',)
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('genre', 'filmwork')
+        return super().get_queryset(request).select_related('genre')
 
 
-class PersonRoleInline(admin.TabularInline):
-    model = PersonRole
-    extra = 0
-    verbose_name = 'Роль'
+class FilmworkPersonInline(admin.TabularInline):
+    model = Person.filmwork_set.through
     autocomplete_fields = ('person',)
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request).select_related('person', 'filmwork')
-        return qs
+        return super().get_queryset(request).select_related('person')
 
 
 @admin.register(Filmwork)
 class FilmworkAdmin(admin.ModelAdmin):
-    list_filter = ('type',)
-    search_fields = ('title', 'description', 'id')
-    list_display = ('title', 'type', 'creation_date', 'rating')
-    fields = (
-        'title', 'type', 'description', 'creation_date', 'certificate',
-        'file_path', 'rating'
-    )
-    empty_value_display = '-пусто-'
-    inlines = [
-        GenreInline,
-        PersonRoleInline,
-    ]
-    ordering = ('title',)
-    list_per_page = ROWS_PER_PAGE
+    # отображение полей в списке
+    # list_display = ('title', 'type', 'creation_date', 'rating')
+    # list_filter = ('type',)
+    # search_fields = ('title', 'description', 'id')
 
+    # fields = (
+    #     'title', 'type', 'description', 'creation_date', 'certificate',
+    #     'file_path', 'rating',
+    # )
 
-@admin.register(Person)
-class PersonAdmin(admin.ModelAdmin):
-    search_fields = ('full_name', 'birth_date', 'id')
-    list_display = (
-        'full_name', 'birth_date', 'created_at', 'updated_at'
-    )
-    empty_value_display = '-пусто-'
-    ordering = ('full_name',)
-    list_per_page = ROWS_PER_PAGE
+    # inlines = [
+    #     FilmworkGenreInline,
+    #     FilmworkPersonInline,
+    # ]
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related(
+            'genres',
+            'persons',
+        )
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        field_name_to_model = {
+            'persons': Person,
+            'genres': Genre,
+        }
+
+        if db_field.name in field_name_to_model:
+            kwargs['widget'] = FilteredSelectMultiple(
+                db_field.verbose_name, is_stacked=False
+            )
+            if 'queryset' not in kwargs:
+                queryset = field_name_to_model[db_field.name].objects.all()
+                if queryset is not None:
+                    kwargs['queryset'] = queryset
+            form_field = db_field.formfield(**kwargs)
+            msg = 'Hold down “Control”, or “Command” on a Mac, to select more than one.'
+            help_text = form_field.help_text
+            form_field.help_text = '{} {}'.format(help_text, msg) if help_text else msg
+            return form_field
+        else:
+            return super().formfield_for_manytomany(db_field, request, **kwargs)
 
 
 @admin.register(Genre)
 class GenreAdmin(admin.ModelAdmin):
-    search_fields = ('name',)
-    list_display = (
-        'name', 'description', 'created_at', 'updated_at'
-    )
-    empty_value_display = '-пусто-'
-    ordering = ('name',)
-    list_per_page = ROWS_PER_PAGE
+    list_display = ('name', 'description')
+    search_fields = ('name', 'description', 'id')
+    fields = ('name', 'description')
+
+
+@admin.register(Person)
+class PersonAdmin(admin.ModelAdmin):
+    list_display = ('full_name', 'birth_date')
+    search_fields = ('full_name', 'birth_date')
+    fields = ('full_name', 'birth_date')
